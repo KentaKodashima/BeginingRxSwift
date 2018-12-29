@@ -26,14 +26,32 @@ example(of: "empty") {
 
 example(of: "Never") {
   let observable = Observable<Any>.never()
+  let disposeBag = DisposeBag()
   
+  /* do operator
+    Emit side effects that don't interupt the subscription itself
+  */
   observable
-    .subscribe(onNext: { element in
-      print(element)
-    },
-     onCompleted: {
-      print("Completed")
-    })
+    .do(
+      onSubscribe: {
+        print("About to subscribe")
+      },
+      onDispose: {
+        print("Disposed")
+      }
+    )
+    .subscribe(
+      onNext: { element in
+        print(element)
+      },
+      onCompleted: {
+        print("Completed")
+      },
+      onDisposed: {
+        print("Disposed")
+      }
+    )
+    .disposed(by: disposeBag)
 }
 
 example(of: "Dispose") {
@@ -55,6 +73,76 @@ example(of: "Dispose Bag") {
     }
     .disposed(by: disposeBag)
 }
+
+example(of: "Create") {
+  enum Droid: Error {
+    case OU812
+  }
+  
+  let disposeBag = DisposeBag()
+  
+  Observable<String>.create { observer in
+    observer.onNext("R2-D2")
+    observer.onError(Droid.OU812)
+    observer.onNext("C-3PO")
+    observer.onNext("K-2SO")
+//    observer.onCompleted()
+    
+    return Disposables.create()
+  }
+  .subscribe(
+    onNext: { print($0) },
+    onError: { print("Error:", $0) },
+    onCompleted: { print("Completed") },
+    onDisposed: { print("Disposed") })
+  .disposed(by: disposeBag)
+}
+
+example(of: "Single") {
+  let disposeBag = DisposeBag()
+  
+  enum FileReadError: Error {
+    case fileNotFound, unreadable, encodingFailed
+  }
+  
+  // Lead text from a file
+  func loadText(from fileName: String) -> Single<String> {
+    return Single.create { single in
+      let disposable = Disposables.create()
+      
+      guard let path = Bundle.main.path(forResource: fileName, ofType: "txt") else {
+        single(.error(FileReadError.fileNotFound))
+        return disposable
+      }
+      
+      guard let data = FileManager.default.contents(atPath: path) else {
+        single(.error(FileReadError.unreadable))
+        return disposable
+      }
+      
+      guard let contents = String(data: data, encoding: .utf8) else {
+        single(.error(FileReadError.encodingFailed))
+        return disposable
+      }
+      
+      single(.success(contents))
+      
+      return disposable
+    }
+  }
+  
+  loadText(from: "ANewHope")
+    .subscribe {
+      switch $0 {
+      case .success(let string):
+        print(string)
+      case .error(let error):
+        print(error)
+      }
+    }
+    .disposed(by: disposeBag)
+}
+
 /*:
  Copyright (c) 2014-2018 Razeware LLC
  
